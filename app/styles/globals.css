@@ -40,3 +40,16 @@ a {
     color-scheme: dark;
   }
 }
+
+td {
+  vertical-align: middle; /* Aligne le texte au centre verticalement */
+}
+
+.modal-body,
+.modal-header {
+  color: #000;
+}
+
+.modified-row > td {
+  background-color: #fff3cd; /* Couleur jaune pâle */
+}

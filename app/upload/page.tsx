@@ -85,6 +85,11 @@ export default function UploadPage() {
           Aller à la page de suppression
         </Button>
       </Link>
+      <Link href="/workflow">
+        <Button variant="link" className="mb-3">
+          Aller à la page de Workflow
+        </Button>
+      </Link>
       {message && <Alert variant="info">{message}</Alert>}
       {uploadProgress > 0 && (
         <div className="my-3">

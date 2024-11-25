@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import Link from 'next/link'
 import { Container, Table, Form, Button, Alert } from 'react-bootstrap'
 import { Modal } from 'react-bootstrap'
 import { ToastContainer, toast } from 'react-toastify'
@@ -83,6 +84,16 @@ export default function WorkflowPage() {
   return (
     <Container>
       <h1 className="my-4">Gestion du Workflow</h1>
+      <Link href="/upload">
+        <Button variant="link" className="mb-3">
+          Aller à la page de téléchargement
+        </Button>
+      </Link>
+      <Link href="/effacer">
+        <Button variant="link" className="mb-3">
+          Aller à la page de Supression
+        </Button>
+      </Link>
       <ToastContainer />
       {message && <Alert variant="info">{message}</Alert>}
       <Table striped bordered hover>

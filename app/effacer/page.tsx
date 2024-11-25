@@ -93,6 +93,11 @@ export default function DeletePage() {
           Aller à la page de téléchargement
         </Button>
       </Link>
+      <Link href="/workflow">
+        <Button variant="link" className="mb-3">
+          Aller à la page de Workflow
+        </Button>
+      </Link>
       {message && <Alert variant="info">{message}</Alert>}
       <div className="mb-3">
         <input

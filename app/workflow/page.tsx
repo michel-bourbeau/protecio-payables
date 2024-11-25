@@ -16,11 +16,15 @@ interface File {
 
 export default function WorkflowPage() {
   const [fileList, setFileList] = useState<File[]>([])
+  const [filteredFiles, setFilteredFiles] = useState<File[]>([])
   const [message, setMessage] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
   const [pendingChanges, setPendingChanges] = useState<
     { id: number; status: string }[]
   >([])
   const [showConfirmModal, setShowConfirmModal] = useState(false)
+
   const handleShowConfirmModal = () => setShowConfirmModal(true)
   const handleCloseConfirmModal = () => setShowConfirmModal(false)
 
@@ -32,12 +36,30 @@ export default function WorkflowPage() {
       setMessage(`Erreur : ${error.message}`)
     } else {
       setFileList(data || [])
+      setFilteredFiles(data || [])
     }
   }
 
   useEffect(() => {
     fetchFiles()
   }, [])
+
+  // Filtrer les fichiers en fonction de la recherche et des statuts
+  useEffect(() => {
+    let filtered = fileList
+
+    if (searchTerm) {
+      filtered = filtered.filter((file) =>
+        file.name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+
+    if (statusFilter) {
+      filtered = filtered.filter((file) => file.status === statusFilter)
+    }
+
+    setFilteredFiles(filtered)
+  }, [searchTerm, statusFilter, fileList])
 
   // Enregistrer les changements temporaires
   const handleSelectChange = (fileId: number, newStatus: string) => {
@@ -96,6 +118,31 @@ export default function WorkflowPage() {
       </Link>
       <ToastContainer />
       {message && <Alert variant="info">{message}</Alert>}
+
+      {/* Barre de recherche et filtre */}
+      <div className="d-flex justify-content-between mb-4">
+        <Form.Control
+          type="text"
+          placeholder="Rechercher un fichier..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="me-2"
+        />
+        <Form.Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="me-2"
+        >
+          <option value="">Tous les statuts</option>
+          <option value="À Faire">À Faire</option>
+          <option value="À Approuver">À Approuver</option>
+          <option value="À Traiter">À Traiter</option>
+          <option value="À Comptabiliser">À Comptabiliser</option>
+          <option value="À Payer">À Payer</option>
+          <option value="À Archiver">À Archiver</option>
+        </Form.Select>
+      </div>
+
       <Table striped bordered hover>
         <thead>
           <tr>
@@ -104,8 +151,7 @@ export default function WorkflowPage() {
           </tr>
         </thead>
         <tbody>
-          {fileList.map((file, index) => {
-            // Rechercher si un changement temporaire existe pour ce fichier
+          {filteredFiles.map((file, index) => {
             const pendingChange = pendingChanges.find(
               (change) => change.id === file.id
             )

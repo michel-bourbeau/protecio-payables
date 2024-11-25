@@ -37,6 +37,16 @@ export default function UploadPage() {
         uploadedFiles += 1
         setUploadProgress(Math.round((uploadedFiles / totalFiles) * 100))
 
+        // Insérer le fichier dans la table `files`
+        const { error: insertError } = await supabase.from('files').insert({
+          name: file.name,
+          status: 'À Faire', // Statut initial
+        })
+
+        if (insertError) {
+          throw insertError
+        }
+
         return data
       })
 

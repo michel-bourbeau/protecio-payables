@@ -18,6 +18,8 @@ export default function UploadPage() {
   const [message, setMessage] = useState('')
   const [uploadProgress, setUploadProgress] = useState<number>(0)
   const [fileList, setFileList] = useState<FileMetadata[]>([]) // Inclut les métadonnées
+  const [currentPage, setCurrentPage] = useState(1) // Page actuelle
+  const itemsPerPage = 5 // Nombre d'éléments par page
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(e.target.files)
@@ -91,7 +93,6 @@ export default function UploadPage() {
     }
   }
 
-  // Nouvelle fonction : Télécharger un fichier depuis Supabase
   const handleDownload = async (fileName: string) => {
     try {
       const { data, error } = await supabase.storage
@@ -103,7 +104,6 @@ export default function UploadPage() {
         return
       }
 
-      // Créer une URL blob pour le fichier
       const url = URL.createObjectURL(data)
       const link = document.createElement('a')
       link.href = url
@@ -115,6 +115,14 @@ export default function UploadPage() {
       setMessage(`Erreur : ${(error as Error).message}`)
     }
   }
+
+  // Pagination : fichiers pour la page actuelle
+  const paginatedFiles = fileList.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  )
+
+  const totalPages = Math.ceil(fileList.length / itemsPerPage)
 
   useEffect(() => {
     fetchFiles()
@@ -165,7 +173,7 @@ export default function UploadPage() {
       </Form>
       <h2 className="my-4">Fichiers téléchargés</h2>
       <ul>
-        {fileList.map((file, index) => (
+        {paginatedFiles.map((file, index) => (
           <li key={index}>
             <strong>{file.name}</strong> - Taille : {file.size} octets - Ajouté{' '}
             {file.createdAt}
@@ -180,6 +188,25 @@ export default function UploadPage() {
           </li>
         ))}
       </ul>
+      <div className="d-flex justify-content-between mt-4">
+        <Button
+          variant="outline-primary"
+          disabled={currentPage === 1}
+          onClick={() => setCurrentPage((prev) => prev - 1)}
+        >
+          Précédent
+        </Button>
+        <span>
+          Page {currentPage} sur {totalPages}
+        </span>
+        <Button
+          variant="outline-primary"
+          disabled={currentPage === totalPages}
+          onClick={() => setCurrentPage((prev) => prev + 1)}
+        >
+          Suivant
+        </Button>
+      </div>
     </Container>
   )
 }

@@ -4,16 +4,24 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import Link from 'next/link'
 import { Container, Form, Button, Alert } from 'react-bootstrap'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
+
+interface FileMetadata {
+  name: string
+  size: number
+  createdAt: string
+}
 
 export default function UploadPage() {
   const [files, setFiles] = useState<FileList | null>(null)
   const [message, setMessage] = useState('')
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
+  const [fileList, setFileList] = useState<FileMetadata[]>([]) // Inclut les métadonnées
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(e.target.files)
   }
-
-  const [uploadProgress, setUploadProgress] = useState<number>(0)
 
   const handleUpload = async () => {
     if (!files || files.length === 0) {
@@ -59,8 +67,6 @@ export default function UploadPage() {
     }
   }
 
-  const [fileList, setFileList] = useState<string[]>([])
-
   const fetchFiles = async () => {
     const { data, error } = await supabase.storage.from('pdf-files').list()
 
@@ -69,7 +75,44 @@ export default function UploadPage() {
     } else {
       const filteredFiles =
         data?.filter((file) => file.name !== '.emptyFolderPlaceholder') || []
-      setFileList(filteredFiles.map((file) => file.name))
+      setFileList(
+        filteredFiles.map((file) => ({
+          name: file.name,
+          size: file.metadata?.size || 0,
+          createdAt: format(
+            file.metadata?.created_at
+              ? new Date(file.metadata.created_at)
+              : new Date(),
+            "'le' dd MMMM yyyy", // Format pour les Québécois
+            { locale: fr } // Localisation française
+          ),
+        }))
+      )
+    }
+  }
+
+  // Nouvelle fonction : Télécharger un fichier depuis Supabase
+  const handleDownload = async (fileName: string) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('pdf-files')
+        .download(fileName)
+
+      if (error) {
+        setMessage(`Erreur lors du téléchargement : ${error.message}`)
+        return
+      }
+
+      // Créer une URL blob pour le fichier
+      const url = URL.createObjectURL(data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (error) {
+      setMessage(`Erreur : ${(error as Error).message}`)
     }
   }
 
@@ -123,7 +166,18 @@ export default function UploadPage() {
       <h2 className="my-4">Fichiers téléchargés</h2>
       <ul>
         {fileList.map((file, index) => (
-          <li key={index}>{file}</li>
+          <li key={index}>
+            <strong>{file.name}</strong> - Taille : {file.size} octets - Ajouté{' '}
+            {file.createdAt}
+            <Button
+              variant="outline-primary"
+              size="sm"
+              className="ms-2"
+              onClick={() => handleDownload(file.name)}
+            >
+              Télécharger
+            </Button>
+          </li>
         ))}
       </ul>
     </Container>

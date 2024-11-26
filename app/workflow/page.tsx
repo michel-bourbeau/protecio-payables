@@ -3,15 +3,68 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import Link from 'next/link'
-import { Container, Table, Form, Button, Alert } from 'react-bootstrap'
+import {
+  Container,
+  Table,
+  Form,
+  Button,
+  Alert,
+  Badge,
+  ProgressBar,
+} from 'react-bootstrap'
 import { Modal } from 'react-bootstrap'
 import { ToastContainer, toast } from 'react-toastify'
+import { FaSortUp, FaSortDown, FaTrash } from 'react-icons/fa'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
 import 'react-toastify/dist/ReactToastify.css'
 
 interface File {
   id: number
   name: string
   status: string
+  createdAt: string
+}
+
+const statusColors: Record<string, string> = {
+  'À Faire': 'secondary',
+  'À Approuver': 'info',
+  'À Traiter': 'primary',
+  'À Comptabiliser': 'warning',
+  'À Payer': 'danger',
+  'À Archiver': 'success',
+}
+
+const statusProgress: Record<string, number> = {
+  'À Faire': 0,
+  'À Approuver': 20,
+  'À Traiter': 40,
+  'À Comptabiliser': 60,
+  'À Payer': 80,
+  'À Archiver': 100,
+}
+
+const handleDownloadFile = async (fileName: string) => {
+  try {
+    const { data, error } = await supabase.storage
+      .from('pdf-files')
+      .download(fileName)
+    if (error) {
+      toast.error(`Erreur lors du téléchargement : ${error.message}`)
+      return
+    }
+
+    const url = URL.createObjectURL(data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    toast.success(`Fichier "${fileName}" téléchargé avec succès.`)
+  } catch (error) {
+    toast.error(`Erreur lors du téléchargement. [error: ${error}]`)
+  }
 }
 
 export default function WorkflowPage() {
@@ -24,6 +77,8 @@ export default function WorkflowPage() {
     { id: number; status: string }[]
   >([])
   const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [sortColumn, setSortColumn] = useState<keyof File | null>(null)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
   const handleShowConfirmModal = () => setShowConfirmModal(true)
   const handleCloseConfirmModal = () => setShowConfirmModal(false)
@@ -35,8 +90,16 @@ export default function WorkflowPage() {
     if (error) {
       setMessage(`Erreur : ${error.message}`)
     } else {
-      setFileList(data || [])
-      setFilteredFiles(data || [])
+      const formattedData = data?.map((file) => ({
+        ...file,
+        createdAt: file.createdAt
+          ? format(new Date(file.createdAt), "'le' dd MMMM yyyy", {
+              locale: fr,
+            })
+          : 'Date inconnue',
+      }))
+      setFileList(formattedData || [])
+      setFilteredFiles(formattedData || [])
     }
   }
 
@@ -103,6 +166,113 @@ export default function WorkflowPage() {
     setPendingChanges([])
   }
 
+  // Supprimer un fichier
+  const handleDeleteFile = async (fileId: number, fileName: string) => {
+    try {
+      const { error } = await supabase.storage
+        .from('pdf-files')
+        .remove([fileName])
+      if (error) {
+        toast.error(`Erreur lors de la suppression : ${error.message}`)
+        return
+      }
+      await supabase.from('files').delete().eq('id', fileId)
+      toast.success('Fichier supprimé avec succès.')
+      fetchFiles()
+    } catch (error) {
+      toast.error(`Erreur lors de la suppression. (${error})`)
+    }
+  }
+
+  // Gestion du tri
+  const handleSort = (column: keyof File) => {
+    if (sortColumn === column) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortColumn(column)
+      setSortOrder('asc')
+    }
+  }
+
+  const sortedFiles = [...filteredFiles].sort((a, b) => {
+    if (!sortColumn) return 0
+    const valueA = a[sortColumn]
+    const valueB = b[sortColumn]
+
+    if (typeof valueA === 'string' && typeof valueB === 'string') {
+      return sortOrder === 'asc'
+        ? valueA.localeCompare(valueB)
+        : valueB.localeCompare(valueA)
+    }
+
+    return 0
+  })
+
+  const synchronizeFiles = async () => {
+    try {
+      const { data: storageFiles, error: storageError } = await supabase.storage
+        .from('pdf-files')
+        .list()
+
+      if (storageError) {
+        toast.error(`Erreur bucket : ${storageError.message}`)
+        return
+      }
+
+      const filteredStorageFiles = storageFiles?.filter(
+        (file) => file.name !== '.emptyFolderPlaceholder'
+      )
+      const { data: tableFiles, error: tableError } = await supabase
+        .from('files')
+        .select('id, name')
+
+      if (tableError) {
+        toast.error(`Erreur table : ${tableError.message}`)
+        return
+      }
+
+      const storageFileNames =
+        filteredStorageFiles?.map((file) => file.name) || []
+      const tableFileNames = tableFiles?.map((file) => file.name) || []
+      const missingInTable = storageFileNames.filter(
+        (fileName) => !tableFileNames.includes(fileName)
+      )
+
+      const addPromises = missingInTable.map((fileName) =>
+        supabase.from('files').insert({
+          name: fileName,
+          status: 'À Faire',
+        })
+      )
+
+      await Promise.all(addPromises)
+
+      const missingInStorage = tableFiles?.filter(
+        (file) => !storageFileNames.includes(file.name)
+      )
+
+      const deletePromises = missingInStorage?.map((file) =>
+        supabase.from('files').delete().eq('id', file.id)
+      )
+
+      await Promise.all(deletePromises)
+
+      toast.success('Synchronisation terminée avec succès !')
+      fetchFiles()
+    } catch (error) {
+      toast.error(`Erreur synchronisation. error: [${error}]`)
+    }
+  }
+
+  useEffect(() => {
+    const syncAndFetch = async () => {
+      await synchronizeFiles()
+      fetchFiles()
+    }
+    syncAndFetch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <Container>
       <h1 className="my-4">Gestion du Workflow</h1>
@@ -113,13 +283,12 @@ export default function WorkflowPage() {
       </Link>
       <Link href="/effacer">
         <Button variant="link" className="mb-3">
-          Aller à la page de Supression
+          Aller à la page de Suppression
         </Button>
       </Link>
       <ToastContainer />
       {message && <Alert variant="info">{message}</Alert>}
 
-      {/* Barre de recherche et filtre */}
       <div className="d-flex justify-content-between mb-4">
         <Form.Control
           type="text"
@@ -134,29 +303,37 @@ export default function WorkflowPage() {
           className="me-2"
         >
           <option value="">Tous les statuts</option>
-          <option value="À Faire">À Faire</option>
-          <option value="À Approuver">À Approuver</option>
-          <option value="À Traiter">À Traiter</option>
-          <option value="À Comptabiliser">À Comptabiliser</option>
-          <option value="À Payer">À Payer</option>
-          <option value="À Archiver">À Archiver</option>
+          {Object.keys(statusColors).map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
         </Form.Select>
       </div>
-
+      <Button variant="info" className="mb-3" onClick={synchronizeFiles}>
+        Synchroniser les fichiers
+      </Button>
       <Table striped bordered hover>
         <thead>
           <tr>
-            <th>Nom du fichier</th>
-            <th>Statut</th>
+            <th onClick={() => handleSort('name')}>
+              Nom{' '}
+              {sortColumn === 'name' &&
+                (sortOrder === 'asc' ? <FaSortUp /> : <FaSortDown />)}
+            </th>
+            <th>Status</th>
+            <th>Date d&apos;ajout</th>
+            <th>Progression</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {filteredFiles.map((file, index) => {
+          {sortedFiles.map((file) => {
             const pendingChange = pendingChanges.find(
               (change) => change.id === file.id
             )
             return (
-              <tr key={index} className={pendingChange ? 'modified-row' : ''}>
+              <tr key={file.id}>
                 <td>{file.name}</td>
                 <td>
                   <Form.Select
@@ -165,13 +342,39 @@ export default function WorkflowPage() {
                       handleSelectChange(file.id, e.target.value)
                     }
                   >
-                    <option value="À Faire">À Faire</option>
-                    <option value="À Approuver">À Approuver</option>
-                    <option value="À Traiter">À Traiter</option>
-                    <option value="À Comptabiliser">À Comptabiliser</option>
-                    <option value="À Payer">À Payer</option>
-                    <option value="À Archiver">À Archiver</option>
+                    {Object.keys(statusColors).map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
                   </Form.Select>
+                  <Badge bg={statusColors[file.status]} className="mt-2">
+                    {file.status}
+                  </Badge>
+                </td>
+                <td>{file.createdAt}</td>
+                <td>
+                  <ProgressBar
+                    now={statusProgress[file.status]}
+                    label={`${statusProgress[file.status]}%`}
+                  />
+                </td>
+                <td>
+                  <Button
+                    variant="outline-primary"
+                    size="sm"
+                    onClick={() => handleDownloadFile(file.name)}
+                    className="me-2"
+                  >
+                    Télécharger
+                  </Button>
+                  <Button
+                    variant="outline-danger"
+                    size="sm"
+                    onClick={() => handleDeleteFile(file.id, file.name)}
+                  >
+                    <FaTrash />
+                  </Button>
                 </td>
               </tr>
             )
